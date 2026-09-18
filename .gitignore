@@ -1,0 +1,14 @@
+# 编译输出目录
+build/
+cmake-build-*/
+cmake/
+cmake-build-debug/
+cmake-build-minsizerel/
+cmake-build-release/
+cmake-build-relwithdebinfo/
+
+# CLion 自己生成的配置文件夹
+.idea/
+
+# STM32CubeMX 缓存文件
+.mxproject
