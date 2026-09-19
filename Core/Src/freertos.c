@@ -25,7 +25,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "serial_port.h"   /* 串口模块挂载（USART1 + DMA 空闲收帧） */
+#include "app_sensor.h"    /* 应用工作流（TIM4 节拍 → 采集 → 发射 → 上报） */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,12 +48,12 @@
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
+/* Definitions for LEDTask */
+osThreadId_t LEDTaskHandle;
+const osThreadAttr_t LEDTask_attributes = {
+  .name = "LEDTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityLow,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -120,11 +121,20 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of LEDTask */
+  LEDTaskHandle = osThreadNew(StartDefaultTask, NULL, &LEDTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  /* 串口模块必须先初始化：内部会创建模块调度线程并启动 USART1 的 DMA 空闲接收。
+   * 此处位于 osKernelInitialize() 之后、osKernelStart() 之前，满足模块要求。 */
+  if (!SerialPort_Init()) {
+    Error_Handler();
+  }
+
+  /* 应用工作流：创建 TIM4 节拍信号量与 SensorTask；
+   * HDC1080 / SX1280 的实际初始化在任务内完成（避免调度器启动前长时间阻塞）。 */
+  App_Sensor_Init();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

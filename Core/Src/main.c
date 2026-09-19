@@ -19,14 +19,16 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "dma.h"
 #include "i2c.h"
 #include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app_sensor.h"   /* 应用工作流：TIM4 节拍 → 采集温湿度 → 发射 → 上报 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -91,9 +93,10 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_USART1_UART_Init();
-  MX_I2C1_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -185,7 +188,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-
+  /* TIM4：1 秒周期节拍（Prescaler=9999 / Period=9999 @ APB1 定时器时钟 100MHz）。
+   * 中断里只释放信号量，采集/发射/上报在 SensorTask 中执行。 */
+  if (htim->Instance == TIM4)
+  {
+    App_Sensor_Tim4Callback();
+  }
   /* USER CODE END Callback 1 */
 }
 

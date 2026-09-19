@@ -35,8 +35,16 @@ enable_language(C ASM)
 add_executable(${CMAKE_PROJECT_NAME}
         DOC/Src/hdc1080.c
         DOC/Src/sx1280.c
-        DOC/Src/USART.c
-        DOC/Inc/USART.h
+        DOC/Src/serial_module.c
+        DOC/Inc/serial_module.h
+        # 外挂模块硬件适配层与工作流（本工程新增）
+        DOC/Src/bsp_port.c
+        DOC/Src/bsp_port_check.c
+        DOC/Src/serial_port.c
+        DOC/Src/app_sensor.c
+        DOC/Inc/bsp_port.h
+        DOC/Inc/serial_port.h
+        DOC/Inc/app_sensor.h
 )
 
 # Add STM32CubeMX generated sources
