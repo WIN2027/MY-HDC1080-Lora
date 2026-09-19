@@ -62,7 +62,7 @@ void MX_TIM4_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM4_Init 2 */
-
+  HAL_TIM_Base_Start_IT(&htim4);
   /* USER CODE END TIM4_Init 2 */
 
 }

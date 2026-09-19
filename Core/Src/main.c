@@ -18,7 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "FreeRTOS.h"
 #include "cmsis_os.h"
 #include "dma.h"
 #include "i2c.h"
@@ -26,7 +25,7 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-#include "FreeRTOS_Task.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -97,8 +96,8 @@ int main(void)
   MX_DMA_Init();
   MX_SPI1_Init();
   MX_USART1_UART_Init();
-  MX_I2C1_Init();
   MX_TIM4_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */

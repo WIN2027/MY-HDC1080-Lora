@@ -36,6 +36,9 @@ add_executable(${CMAKE_PROJECT_NAME}
 
         DOC/Src/FreeRTOS_Task.c
         DOC/Src/Back.c
+        DOC/Src/MYUSART.c
+        DOC/Inc/MYUSART.h
+        DOC/Inc/MYUSART_CFG.h
 
         # 外挂模块硬件适配层与工作流（本工程新增）
 )

@@ -123,7 +123,7 @@
 #ifndef CMSIS_OS_H_
 #define CMSIS_OS_H_
 
-#include "FreeRTOS_Task.h"
+#include "FreeRTOS.h"
 #include "task.h"
 
 #define RTOS_ID_n             ((tskKERNEL_VERSION_MAJOR << 16) | (tskKERNEL_VERSION_MINOR))
