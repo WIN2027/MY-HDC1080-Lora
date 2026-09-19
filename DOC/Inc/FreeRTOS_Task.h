@@ -46,6 +46,26 @@ extern osMessageQueueId_t UsartTxQueue;
  */
 bool UsartTx_Post(uint8_t cmd, const uint8_t *data, uint8_t len);
 
+/* ---------------- HDC1080 遥测净荷（CMD = 0x18） ----------------
+ * 每 1 秒一帧，净荷 7 字节，全部小端：
+ *   [0]    status  0 = 本次测量成功；非 0 = HDC1080_Status_t 返回码
+ *                  （-1 I2C 失败 / -3 参数错误 / -5 器件 ID 不符 …）
+ *   [1..2] seq     递增序号（uint16），用于判断丢帧与乱序
+ *   [3..4] temp    温度 ×100（int16），例 2356 → 23.56 °C
+ *   [5..6] hum     湿度 ×100（uint16），例 4821 → 48.21 %RH
+ * 测量失败时 temp/hum 填 0，失败原因完全由 status 给出。
+ */
+#define HDC_TELEMETRY_CMD   0x18u
+#define HDC_TELEMETRY_LEN   7u
+
+/**
+ * @brief  记录 HDC1080 初始化结果（由 main.c 在 RTOS 启动前调用）
+ * @param  status HDC1080_Init() 的返回值（HDC1080_OK 或错误码）
+ * @note   HDC1080Task 每个节拍把它放进遥测净荷的 status 字节上报，
+ *         这样初始化失败不会被静默吞掉（原先只能挂调试器才发现）。
+ */
+void App_SetHdcInitStatus(int8_t status);
+
 void MX_FREERTOS_Init(void);
 
 #endif //FreeRTOS_Task_H

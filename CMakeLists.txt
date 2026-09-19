@@ -39,6 +39,8 @@ add_executable(${CMAKE_PROJECT_NAME}
         DOC/Src/MYUSART.c
         DOC/Inc/MYUSART.h
         DOC/Inc/MYUSART_CFG.h
+        DOC/Src/HDC1080.c
+        DOC/Inc/HDC1080.h
 
         # 外挂模块硬件适配层与工作流（本工程新增）
 )

@@ -28,7 +28,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+/* 放在 USER CODE 段内：CubeMX 重新生成 main.c 时不会覆盖这里，
+ * 而生成区的 #include 列表是按 .ioc 重建的，手加的条目会被删掉。 */
+#include "HDC1080.h"
+#include "FreeRTOS_Task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -99,7 +102,11 @@ int main(void)
   MX_TIM4_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-
+  /* HDC1080 初始化：此处 MX_I2C1_Init() 已执行，TIM10 时基也已在跑
+   * （HDC1080_Init 内部的 HAL_Delay(15) 依赖它），但 FreeRTOS 尚未启动。
+   * 返回码交给 App_SetHdcInitStatus() 记录下来，由 HDC1080Task 通过
+   * 串口遥测帧的 status 字节上报，不再静默丢弃。 */
+  App_SetHdcInitStatus(HDC1080_Init());
   /* USER CODE END 2 */
 
   /* Init scheduler */
