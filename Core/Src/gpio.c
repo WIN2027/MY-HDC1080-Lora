@@ -79,11 +79,11 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : DX1820_BUSY_Pin */
-  GPIO_InitStruct.Pin = DX1820_BUSY_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(DX1820_BUSY_GPIO_Port, &GPIO_InitStruct);
+  /*Configure GPIO pin : SX1280BUSY_Pin */
+  GPIO_InitStruct.Pin = SX1280BUSY_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(SX1280BUSY_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : SX1280NRESET_Pin */
   GPIO_InitStruct.Pin = SX1280NRESET_Pin;
@@ -101,9 +101,6 @@ void MX_GPIO_Init(void)
 
   HAL_NVIC_SetPriority(EXTI2_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI2_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
