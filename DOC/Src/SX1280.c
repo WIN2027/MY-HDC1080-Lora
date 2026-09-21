@@ -94,6 +94,18 @@ static SX1280_TxDoneCallback_t s_tx_done_cb = NULL;
 static SX1280_RxDoneCallback_t s_rx_done_cb = NULL;
 static SX1280_ErrorCallback_t  s_error_cb   = NULL;
 
+/* ================= 【临时诊断】最近一次 SPI 命令与芯片状态 =================
+ * 用途：配置序列中若有命令被芯片拒绝（SX1280_StatusCheck 返回 ERR_CMD），
+ *       用这两个变量就能直接看出"是哪条命令、芯片回了什么状态"。
+ * 状态字节含义（手册 Table 11-5）：
+ *   bit[7:5] 电路模式: 2=STDBY_RC 3=STDBY_XOSC 4=FS 5=Rx 6=Tx
+ *   bit[4:2] 命令状态: 1=成功 2=数据可读 3=命令超时 4=处理错误 5=执行失败 6=Tx完成
+ * 【定位完成后删除】
+ */
+volatile uint8_t g_sx_last_opcode = 0u;
+volatile uint8_t g_sx_last_status = 0u;
+volatile int8_t  g_sx_last_ret    = 0;
+
 /*============================================================================
  * 内部静态函数声明
  *==========================================================================*/
@@ -285,14 +297,19 @@ static int8_t SX1280_SpiFrame(const uint8_t *tx, uint8_t *rx, uint16_t len)
 static int8_t SX1280_StatusCheck(uint8_t st)
 {
     uint8_t cmd = SX1280_STATUS_CMD(st);
+
+    g_sx_last_status = st;          /* 【临时诊断】记录芯片返回的状态字节 */
+
     if ((cmd == SX1280_CMDST_OK) ||
         (cmd == SX1280_CMDST_DATA_READY) ||
         (cmd == SX1280_CMDST_TX_DONE)) {
         return SX1280_OK;
     }
     if (cmd == SX1280_CMDST_TIMEOUT) {
+        g_sx_last_ret = SX1280_ERR_TIMEOUT;
         return SX1280_ERR_TIMEOUT;
     }
+    g_sx_last_ret = SX1280_ERR_CMD;
     return SX1280_ERR_CMD;
 }
 
@@ -308,6 +325,7 @@ static int8_t SX1280_CmdOp(uint8_t opcode, const uint8_t *param, uint8_t n)
     }
 
     tx[0] = opcode;
+    g_sx_last_opcode = opcode;      /* 【临时诊断】记录最近下发的命令操作码 */
     for (i = 0; i < n; i++) {
         tx[1U + i] = (param != NULL) ? param[i] : 0x00U;
     }
@@ -1442,11 +1460,10 @@ int8_t MYSX1280_Init(void)
     cfg.power_dbm    = 6;
     cfg.ramp_time    = SX1280_RAMP_20US;
 
-    if (SX1280_Init(&cfg) != SX1280_OK)
-    {
-        /* 初始化失败处理 */
-    }
-    return SX1280_OK;
+    /* 直接返回驱动返回码。
+     * 原实现写成 "if (失败) { 空 } return SX1280_OK;"，会把初始化失败
+     * 静默成"成功"，调用方无法发现芯片不在位 / SPI 不通。 */
+    return SX1280_Init(&cfg);
 }
 
 /* 文件结束 */

@@ -43,7 +43,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         DOC/Inc/HDC1080.h
         DOC/Src/SX1280.c
         DOC/Inc/SX1280.h
-        DOC/Inc/SX1280.h
+        DOC/Inc/App_Config.h
 
         # 外挂模块硬件适配层与工作流（本工程新增）
 )

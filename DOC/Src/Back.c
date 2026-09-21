@@ -7,6 +7,7 @@
 #include "stm32f4xx_hal.h"
 #include "FreeRTOS_Task.h"
 #include "MYUSART.h"
+#include "SX1280.h"
 
 /**
   * @brief  Period elapsed callback in non blocking mode
@@ -57,4 +58,37 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     SerialModule_OnError(huart);
+}
+
+/* ================= SX1280 DIO 中断胶水 =================
+ * 驱动把 DIO1/2/3 的中断处理拆成两半：
+ *   - SX1280_DIOx_IRQHandler()：只在中断里置标志 s_irq_flag（极短，ISR 安全）
+ *   - SX1280_Process()       ：真正的寄存器处理，必须由 SX1280Task 在【任务上下文】调用
+ * 这里补上第一半：从 HAL 的 EXTI 回调分发进驱动，并唤醒 SX1280Task。
+ *
+ * EXTI0/1/2 的 NVIC 优先级为 5，等于 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY，
+ * 因此在中断里调用 osThreadFlagsSet() 是合法的（configUSE_OS2_EVENTFLAGS_FROM_ISR = 1）。
+ * 注意：PB10(SX1280BUSY) 已改为普通输入、不接 EXTI —— BUSY 由驱动主动轮询。
+ */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    switch (GPIO_Pin)
+    {
+    case DIO1_Pin:
+        SX1280_DIO1_IRQHandler();
+        break;
+
+    case DIO2_Pin:
+        SX1280_DIO2_IRQHandler();
+        break;
+
+    case DIO3_Pin:
+        SX1280_DIO3_IRQHandler();
+        break;
+
+    default:
+        return;      /* 非 SX1280 的 EXTI 引脚，不处理 */
+    }
+
+    (void)osThreadFlagsSet(SX1280TaskHandle, BIT_SX1280_IRQ);
 }

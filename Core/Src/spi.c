@@ -54,15 +54,7 @@ void MX_SPI1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI1_Init 2 */
-  /* SX1280/SX1281 手册 Rev3.2 表 9-1（第 60 页）t2：SCK 周期 ≥ 55 ns，
-   * 即 SCK ≤ 18.18 MHz。CubeMX 默认预分频 /2 → PCLK2 100MHz/2 = 50MHz 超限；
-   * 此处改为 /8 = 12.5 MHz（周期 80 ns），留有余量。
-   * 写在 USER CODE 段内，CubeMX 重新生成代码不会覆盖。 */
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
+
   /* USER CODE END SPI1_Init 2 */
 
 }
