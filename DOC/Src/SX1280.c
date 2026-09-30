@@ -94,18 +94,6 @@ static SX1280_TxDoneCallback_t s_tx_done_cb = NULL;
 static SX1280_RxDoneCallback_t s_rx_done_cb = NULL;
 static SX1280_ErrorCallback_t  s_error_cb   = NULL;
 
-/* ================= 【临时诊断】最近一次 SPI 命令与芯片状态 =================
- * 用途：配置序列中若有命令被芯片拒绝（SX1280_StatusCheck 返回 ERR_CMD），
- *       用这两个变量就能直接看出"是哪条命令、芯片回了什么状态"。
- * 状态字节含义（手册 Table 11-5）：
- *   bit[7:5] 电路模式: 2=STDBY_RC 3=STDBY_XOSC 4=FS 5=Rx 6=Tx
- *   bit[4:2] 命令状态: 1=成功 2=数据可读 3=命令超时 4=处理错误 5=执行失败 6=Tx完成
- * 【定位完成后删除】
- */
-volatile uint8_t g_sx_last_opcode = 0u;
-volatile uint8_t g_sx_last_status = 0u;
-volatile int8_t  g_sx_last_ret    = 0;
-
 /*============================================================================
  * 内部静态函数声明
  *==========================================================================*/
@@ -298,18 +286,22 @@ static int8_t SX1280_StatusCheck(uint8_t st)
 {
     uint8_t cmd = SX1280_STATUS_CMD(st);
 
-    g_sx_last_status = st;          /* 【临时诊断】记录芯片返回的状态字节 */
-
+    /* 命令状态 0x0 在手册 Table 11-5 里标注为 "Reserved"，其实际含义是
+     * "尚无任何命令的执行结果"。由于 SPI 的状态字节是在事务【开始】时由从机
+     * 输出的，复位后（或接口判别事务之后）的第一条命令读到的必定是 0 ——
+     * 实测状态字节恒为 0x41（模式=STDBY_RC、命令状态=0）。
+     * 它不是错误码（真错误是 3=超时 / 4=处理错误 / 5=执行失败，仍会被下面拦下），
+     * 必须放行；否则 SX1280_Init() 会在第一条 SET_STANDBY 就判 ERR_CMD 并中止
+     * 整条初始化链。 */
     if ((cmd == SX1280_CMDST_OK) ||
+        (cmd == 0x00U) ||
         (cmd == SX1280_CMDST_DATA_READY) ||
         (cmd == SX1280_CMDST_TX_DONE)) {
         return SX1280_OK;
     }
     if (cmd == SX1280_CMDST_TIMEOUT) {
-        g_sx_last_ret = SX1280_ERR_TIMEOUT;
         return SX1280_ERR_TIMEOUT;
     }
-    g_sx_last_ret = SX1280_ERR_CMD;
     return SX1280_ERR_CMD;
 }
 
@@ -325,7 +317,6 @@ static int8_t SX1280_CmdOp(uint8_t opcode, const uint8_t *param, uint8_t n)
     }
 
     tx[0] = opcode;
-    g_sx_last_opcode = opcode;      /* 【临时诊断】记录最近下发的命令操作码 */
     for (i = 0; i < n; i++) {
         tx[1U + i] = (param != NULL) ? param[i] : 0x00U;
     }
@@ -479,6 +470,37 @@ int8_t SX1280_Reset(void)
     ret = SX1280_WaitBusyLow(SX1280_RESET_WAIT_MS);
 
     if (ret == SX1280_OK) {
+        /* ★ 吸收"接口判别事务"（本驱动能跑通的关键一步）
+         *
+         * 手册 9.7：上电【或硬复位】后，SX1280 依据收到的【第一条通信】来判别
+         *           数字总线是 SPI 还是 UART。
+         * 手册 9.3.3：判别过程进行期间，MISO 的输出【无效】。
+         *
+         * 因此复位后的第一条 SPI 事务必然读回无效数据（实测恒为 0xFF）。若把它
+         * 当普通命令处理，SX1280_Init() 会在第一条 SET_STANDBY 就拿到 ERR_CMD
+         * 而中止整条初始化链 —— 而且因为每次硬复位都会重新武装判别，重试也永远
+         * 失败。实测已排除"SPI 时钟过快"：降到 390kHz 仍然失败，而同样 390kHz 下
+         * 在判别完成之后发送命令就能得到合法状态字节 0x41(STDBY_RC)。
+         *
+         * 这里先发一个哑字节把这次判别消耗掉，再等 BUSY 变低，此后的事务才是可用的。
+         * 说明：驱动里原有的 SX1280_DoWake() 正是发哑探测帧，但它只在
+         *       s_config.sleeping != 0（即调用过 SetSleep）时才会执行，复位后走不到，
+         *       所以必须在这里补上。 */
+        {
+            /* 用 GET_STATUS(0xC0) 充当"第一条通信"，而不是随便发 0x00：
+             *  - 0xC0 是合法命令且不需要参数，不会让芯片进入错误状态；
+             *  - 手册 11.3 明确说 GetStatus 可以在任何时刻下发，【唯独不能是
+             *    接口上的第一条命令】—— 正好用它顶掉被接口判别消耗的那一条。
+             * 之前发 0x00（保留操作码 + 缺参数）会让芯片记下一次错误，
+             * 而 SPI 状态字节是在事务【开始】时输出的，于是下一条真实命令
+             * SET_STANDBY 读到的是这个残留错误（实测 0x55：模式=STDBY_RC、
+             * 命令状态=5 执行失败），初始化链随之在第一,步就断掉。 */
+            uint8_t dummy_tx = 0xC0U;   /* GET_STATUS */
+            uint8_t dummy_rx = 0x00U;
+            (void)SX1280_SPI_Transceive(&dummy_tx, &dummy_rx, 1U);
+            (void)SX1280_WaitBusyLow(SX1280_RESET_WAIT_MS);
+        }
+
         s_config.sleeping      = 0U;
         s_config.inited        = 0U;
         s_config.packet_type   = SX1280_PKT_LORA;

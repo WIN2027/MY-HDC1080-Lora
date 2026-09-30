@@ -54,7 +54,18 @@ void MX_SPI1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI1_Init 2 */
-
+  /* SX1280 的 SPI 上限是 18MHz（手册 9.3 节："high speed up to 18 MHz"，
+   * Table 9-1 的 t2 也规定 SCK 周期最小 55ns）。而上面 CubeMX 生成的
+   * SPI_BAUDRATEPRESCALER_2 在 APB2=100MHz 下是 50MHz —— 超上限 2.8 倍，
+   * 芯片完全无法应答，实测表现为 MISO 恒读 0xFF、SX1280_Init() 在复位后
+   * 第一条命令 SET_STANDBY 就返回 ERR_CMD(-4)。
+   * 这里覆盖为 /8 = 12.5MHz（约为上限的 70%，留足裕量）。
+   * 放在 USER CODE 段内，CubeMX 重新生成 spi.c 时不会被清掉。 */
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END SPI1_Init 2 */
 
 }

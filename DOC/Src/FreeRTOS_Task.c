@@ -11,7 +11,6 @@
 #include "FreeRTOS_Task.h"
 #include "cmsis_os2.h"
 #include "usart.h"
-#include "spi.h"          /* 【临时诊断】SPI 链路测试需要 hspi1 */
 #include "MYUSART.h"
 #include "HDC1080.h"
 #include "SX1280.h"
@@ -89,102 +88,13 @@ bool UsartTx_Post(uint8_t cmd, const uint8_t *data, uint8_t len)
 
 /* ================= 任务 ================= */
 
-/* ================= 【临时诊断】SPI 物理链路测试 =================
- * 为什么需要：SX1280_Init 目前返回 -4(ERR_CMD)，而且埋点显示芯片返回的状态字节
- *             是 0xFF —— 即复位后第一条 SPI 命令 SET_STANDBY 就拿到了"全 1"，
- *             说明 MISO 上没有任何有效数据。MCU 侧配置已逐项核对无误
- *             （SPI Mode0 / 12.5MHz / PA5-PA7 均为 AF / NSS 正确），
- *             所以要确认 MCU 与 SX1280 之间的 SPI 物理链路到底有没有信号。
- *
- * 做法：在 LEDTask 里周期性、【连续重复】地用 SPI1 发一条真实且安全的命令
- *       SET_STANDBY(STDBY_RC) = 0x80 0x00，并回读 MISO。
- *       测试期间把 SPI 时钟临时降到 100MHz/256 ≈ 390 kHz —— 这个速度示波器
- *       看得清，万用表也能测到平均值。
- *
- * 在 SX1280 端（对芯片引脚）应该看到：
- *   NSS  (pin 19) : 大部分时间被拉低（选中），周期性短暂拉高
- *   SCK  (pin 18) : 约 390kHz 的连续时钟方波（万用表约 1.6V 上下）
- *   MOSI (pin 17) : 每个 NSS 周期内先一个窄脉冲(0x80)再一字节 0x00
- *   MISO (pin 16) : 芯片正常应答时电平会明显翻转；
- *                   ★ 若该线断路/虚焊，会呈现恒定的高或低 ——
- *                     对应回读值是 0xFF 或 0x00，这正是当前的怀疑点
- *
- * 结果查看（可直接在 CLion 调试器里看，也可用调试探针读内存）：
- *   g_spi_test_cnt  传输次数
- *   g_spi_test_ok   成功次数（HAL_OK）
- *   g_spi_test_err  失败次数
- *   g_spi_test_rx[2] 最近一次 MISO 回读：全 0xFF / 全 0x00 都说明 MISO 无驱动
- *
- * ⚠ 临时诊断代码，三个注意点：
- *   1) 测试窗口内会占满 CPU（LEDTask 是最低优先级，不会影响其它任务），
- *      且会独占 SPI1 —— 所以只在 SX1280 驱动已经不工作时用它；
- *   2) 用完把 SPI_TEST_ENABLE 改成 0，或把本段连同 LEDTask 里的调用一起删除；
- *   3) 若 SPI_TEST_SLOW_CLOCK=1，测试结束会把时钟恢复成 12.5MHz。
- */
-#define SPI_TEST_ENABLE      1
-#define SPI_TEST_SLOW_CLOCK  1        /* 1=测试期间降到 390kHz，便于观察 */
-#define SPI_TEST_WINDOW_MS   300u     /* 每次唤醒内连续发送的时长 */
-#define SPI_TEST_LOOP_MS     500u     /* LEDTask 等待超时（决定测试重复频率） */
-
-volatile uint32_t g_spi_test_cnt    = 0u;
-volatile uint32_t g_spi_test_ok     = 0u;
-volatile uint32_t g_spi_test_err    = 0u;
-volatile uint8_t  g_spi_test_rx[2]  = {0u, 0u};
-
-static void SpiLinkTest_Run(void)
-{
-    /* SET_STANDBY(STDBY_RC)：真实且安全的命令，芯片正常时会在 MISO 回状态字节 */
-    static const uint8_t tx[2] = { 0x80u, 0x00u };
-    uint8_t  rx[2];
-    uint32_t t0;
-
-#if SPI_TEST_SLOW_CLOCK
-    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;   /* 100MHz/256 ≈ 390kHz */
-    (void)HAL_SPI_Init(&hspi1);
-#endif
-
-    t0 = HAL_GetTick();
-    while ((HAL_GetTick() - t0) < SPI_TEST_WINDOW_MS)
-    {
-        HAL_GPIO_WritePin(SX1280_NSS_GPIO_Port, SX1280_NSS_Pin, GPIO_PIN_RESET);
-
-        if (HAL_SPI_TransmitReceive(&hspi1, (uint8_t *)tx, rx, 2U, 100U) == HAL_OK) {
-            g_spi_test_ok++;
-        } else {
-            g_spi_test_err++;
-        }
-
-        HAL_GPIO_WritePin(SX1280_NSS_GPIO_Port, SX1280_NSS_Pin, GPIO_PIN_SET);
-
-        g_spi_test_rx[0] = rx[0];
-        g_spi_test_rx[1] = rx[1];
-        g_spi_test_cnt++;
-    }
-
-#if SPI_TEST_SLOW_CLOCK
-    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;     /* 恢复 12.5MHz */
-    (void)HAL_SPI_Init(&hspi1);
-#endif
-}
-
 static void LEDTask(void *pvParameters)
 {
     while (1)
     {
-#if SPI_TEST_ENABLE
-        /* 超时 SPI_TEST_LOOP_MS：既保住 1 秒的 LED 心跳，也周期性跑 SPI 测试 */
-        uint32_t flags = osThreadFlagsWait(BIT_LED_BLINK, osFlagsWaitAny, SPI_TEST_LOOP_MS);
-
-        if ((flags & BIT_LED_BLINK) != 0u) {
-            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-        }
-
-        SpiLinkTest_Run();
-#else
         osThreadFlagsWait(BIT_LED_BLINK,osFlagsWaitAny,osWaitForever);
 
         HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-#endif
     }
 }
 
@@ -226,29 +136,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     s_stack_ovf_flag = 1u;
 }
 
-/* ================= 【临时诊断】启动阶段与中断屏蔽状态快照 =================
- * 现象：烧录后系统卡在 MX_FREERTOS_Init() → MYSX1280_Init() → SX1280_Reset()
- *       → SX1280_DelayMs()(=HAL_Delay) 内；TIM10 的 UIF 挂起却无人处理、
- *       uwTick 停在 16 不动，说明中断在此前已被屏蔽（HAL_Delay 死等）。
- * 用途：在启动流程每一步前后记录 PRIMASK / BASEPRI，确定是哪个调用抬起了屏蔽位。
- *       BASEPRI == 0x50 (configMAX_SYSCALL_INTERRUPT_PRIORITY<<4) 表示
- *       正处在 FreeRTOS 临界区内；Bit5..7 对应优先级 5 —— 恰好会屏蔽
- *       优先级为 5 的 TIM10。
- * 【定位完成后删除本段及相关 App_BootMark() 调用】
- */
-volatile uint32_t g_boot_stage    = 0u;
-volatile uint32_t g_boot_primask[8];
-volatile uint32_t g_boot_basepri[8];
-
-void App_BootMark(uint32_t stage)
-{
-    if (stage < 8u) {
-        g_boot_primask[stage] = __get_PRIMASK();
-        g_boot_basepri[stage] = __get_BASEPRI();
-        g_boot_stage          = stage;      /* 最后写：保证 stage 与快照一致 */
-    }
-}
-
 /* ================= SX1280 业务 =================
  * 角色由 App_Config.h 的 NODE_ROLE 决定：
  *   NODE_ROLE_TX : HDC1080Task 采集 → 本地 0x18 遥测 + 空中发帧（经 SxTxQueue 交给本任务）
@@ -257,12 +144,6 @@ void App_BootMark(uint32_t stage)
  * SX1280_Process() 调用，所以回调里可以安全使用 RTOS 接口。
  */
 /* 注：s_sx_init_status 已在本文件靠前处声明（App_SetSxInitStatus 需要先见到它） */
-static volatile uint32_t s_sx_tx_done     = 0u;         /* 调试计数：可直接在调试器里查看 */
-static volatile uint32_t s_sx_tx_calls    = 0u;         /* StartTransmit 被调用次数 */
-static volatile int8_t   s_sx_last_tx_ret = 0x7F;       /* StartTransmit 最近一次返回码 */
-static volatile uint32_t s_sx_rx_ok       = 0u;
-static volatile uint32_t s_sx_err_cnt     = 0u;
-static volatile int8_t   s_sx_last_err    = 0;
 
 /* ---- 每拍的一次性上报：栈溢出任务名 + SX1280 初始化失败码 ---- */
 static volatile uint8_t s_sx_init_reported = 0u;   /* 只上报一次，但保留原值供排查 */
@@ -292,13 +173,15 @@ static void App_ReportPending(void)
 
 static void Sx_OnTxDone(void)
 {
-    s_sx_tx_done++;
+    /* 发射完成。当前无需业务动作：下一帧由 SX1280Task 在 STDBY/IDLE 时自动取出。
+     * 保留此回调作为扩展点（例如统计发射失败率、实现重传策略）。 */
 }
 
 static void Sx_OnError(int8_t error)
 {
-    s_sx_last_err = error;
-    s_sx_err_cnt++;
+    /* 驱动侧错误（SPI 失败 / 超时 / CRC 错等）。保留为扩展点：
+     * 需要时在这里计数或上报；接收端的 0x19 上报帧 status 字段已能体现收包异常。 */
+    (void)error;
 }
 
 static void Sx_OnRxDone(const uint8_t *data, uint8_t len, const SX1280_RxInfo_t *info)
@@ -324,8 +207,6 @@ static void Sx_OnRxDone(const uint8_t *data, uint8_t len, const SX1280_RxInfo_t 
     payload[8]  = (uint8_t)((uint16_t)info->rssi_dbm & 0xFFu);
     payload[9]  = (uint8_t)(((uint16_t)info->rssi_dbm >> 8) & 0xFFu);
     payload[10] = (uint8_t)info->snr_db;
-
-    if (status == SX1280_OK) { s_sx_rx_ok++; } else { s_sx_err_cnt++; }
 
     (void)UsartTx_Post(RX_REPORT_CMD, payload, RX_REPORT_LEN);
 }
@@ -378,13 +259,13 @@ static void SX1280Task(void *pvParameters)
 #if (NODE_ROLE == NODE_ROLE_TX)
         /* 空闲且有排队帧就发出去。StartTransmit 是非阻塞的，
          * 完成与否由 TX_DONE 中断 → Process → Sx_OnTxDone 通知。
-         * 返回码记录到 s_sx_last_tx_ret：该函数有多处会静默失败
-         * （inited==0→ERR_STATE、BUSY 超时→ERR_TIMEOUT、SPI 失败等），
-         * 若直接 (void) 丢弃，现场只能看到"一帧都没发出去"而无从判断。 */
+         *
+         * 注：驱动内部是以"上一条命令"返回的状态字节判定成败的（SPI 从机在
+         *     事务【开始】时输出状态），所以这里的返回码并不严格代表本次
+         *     SET_TX 的结果，详见 SX1280.h 中 SX1280_StatusCheck 的说明。 */
         if (SX1280_GetState() == SX1280_STATE_IDLE) {
             if (osMessageQueueGet(SxTxQueue, &msg, NULL, 0U) == osOK) {
-                s_sx_tx_calls++;
-                s_sx_last_tx_ret = SX1280_StartTransmit(msg.data, msg.len);
+                (void)SX1280_StartTransmit(msg.data, msg.len);
             }
         }
 #endif
@@ -486,8 +367,6 @@ static void USARTTask(void *pvParameters)
 
 void MX_FREERTOS_Init(void)
 {
-    App_BootMark(3u);   /* 【临时诊断】进入本函数（= osKernelInitialize() 之后） */
-
     /* 1. SerialModule_Init 必须在 osKernelInitialize() 之后调用（内部会创建调度线程）。
      * main.c 的时序为 osKernelInitialize() -> MX_FREERTOS_Init() -> osKernelStart()，
      * 在此处调用刚好满足模块要求。失败说明 huart1 未就绪或 DMA 启动失败。
@@ -499,7 +378,6 @@ void MX_FREERTOS_Init(void)
      *    否则 uwTick 不再递增 → HAL_Delay 死等 → 整机卡死在启动阶段。
      *    凡是用到 HAL_Delay 的初始化（如 MYSX1280_Init），都必须放到 main.c 里、
      *    在本函数之前完成。详见 FreeRTOS_Task.h 中 App_SetSxInitStatus() 的说明。 */
-    App_BootMark(4u);
     if (!SerialModule_Init(s_serial_ports, 1)) {Error_Handler();}
 
     /* 2. 队列必须先于任务创建，否则投递接口会因队列为 NULL 而丢帧。
@@ -511,7 +389,6 @@ void MX_FREERTOS_Init(void)
     SxTxQueue = osMessageQueueNew(SX1280_TX_QUEUE_DEPTH, sizeof(Sx1280TxMsg_t), NULL);
     if (SxTxQueue == NULL) {Error_Handler();}
 #endif
-    App_BootMark(5u);   /* 【临时诊断】队列创建之后 */
 
     /* 3. 创建任务 */
     LEDTaskHandle = osThreadNew(LEDTask, NULL, &LEDTask_attributes);

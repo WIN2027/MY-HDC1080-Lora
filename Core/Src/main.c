@@ -108,7 +108,6 @@ int main(void)
    * 返回码交给 App_SetHdcInitStatus() 记录下来，由 HDC1080Task 通过
    * 串口遥测帧的 status 字节上报，不再静默丢弃。 */
   App_SetHdcInitStatus(HDC1080_Init());
-  App_BootMark(1u);   /* 【临时诊断】HDC1080_Init() 之后的中断屏蔽状态快照 */
 
   /* SX1280 初始化：必须在这里完成 —— 也就是【任何 osThreadNew 之前】。
    * MYSX1280_Init() 内部的 SX1280_Reset() 会调用 HAL_Delay，而 HAL_Delay 依赖
@@ -117,7 +116,6 @@ int main(void)
    * 0x50 把 TIM10 屏蔽掉，HAL_Delay 随即死等 —— 实测死机点。
    * 返回码交给 App_SetSxInitStatus() 记录，由串口上报帧体现，不静默丢弃。 */
   App_SetSxInitStatus(MYSX1280_Init());
-  App_BootMark(2u);   /* 【临时诊断】MYSX1280_Init() 之后的中断屏蔽状态快照 */
   /* USER CODE END 2 */
 
   /* Init scheduler */

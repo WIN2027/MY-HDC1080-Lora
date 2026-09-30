@@ -18,6 +18,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+# 节点角色：两块板共用同一份代码，靠这个宏区分业务。
+#   NODE_ROLE_TX = 采集 HDC1080 并经 SX1280 发送（本地串口出 0x18 遥测）
+#   NODE_ROLE_RX = SX1280 连续接收，串口上报 0x19（含 RSSI/SNR）
+# 用法：cmake -DNODE_ROLE=NODE_ROLE_RX ...   （默认 TX）
+# 注意：CMake 的 -D 设的是缓存变量，必须在这里真正接到编译宏上，
+#       否则 App_Config.h 里"构建时覆盖"的说法不成立。
+set(NODE_ROLE "NODE_ROLE_TX" CACHE STRING "节点角色: NODE_ROLE_TX 或 NODE_ROLE_RX")
+
 # Set the project name
 set(CMAKE_PROJECT_NAME 2.4G)
 
@@ -70,7 +78,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined symbols
+        NODE_ROLE=${NODE_ROLE}
 )
 
 # Remove wrong libob.a library dependency when using cpp files

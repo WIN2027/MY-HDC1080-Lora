@@ -114,9 +114,4 @@ bool Sx1280Tx_Post(const uint8_t *frame, uint8_t len);
 
 void MX_FREERTOS_Init(void);
 
-/* 【临时诊断】启动阶段与中断屏蔽状态快照（定位启动期卡死用）
- * 每调用一次记录当前 PRIMASK/BASEPRI 到 stage 槽位，便于判断是哪个调用
- * 抬起了中断屏蔽位。stage 取值 0~7。【定位完成后删除】 */
-void App_BootMark(uint32_t stage);
-
 #endif //FreeRTOS_Task_H
